@@ -83,6 +83,14 @@ def train_model(
     best_valid_loss = np.inf # TODO optimize
     train_losses = []
     valid_losses = []
+    filename = (
+        f'bs{args.batch_size}_'
+        f'lr{args.learning_rate}_'
+        f'dm{args.d_model}_'
+        f'dp{args.dropout}_'
+        f'nh{args.nhead}_'
+        f'nl{args.num_layers}.txt'
+    )
 
     start_time = time.time()
     for epoch in range(1, num_epochs + 1):
@@ -117,7 +125,7 @@ def train_model(
         valid_loss = valid_loss / len(valid_loader)
         valid_losses.append(valid_loss)
         prompt = (
-            f'Epoch: {epoch + 1: 3}/{num_epochs} '
+            f'Epoch: {epoch: 3}/{num_epochs} '
             f'Elapsed Time: {time_since(start_time)} '
             f'Train Loss: {train_loss: .4f} '
             f'Valid Loss: {valid_loss: .4f} '
@@ -135,7 +143,7 @@ def train_model(
         if valid_loss < best_valid_loss:
             torch.save(model, ckpt_dir / 'ckpt-best.pth')
             best_valid_loss = valid_loss
-            with open(f'{ckpt_dir}/best_valid_loss.txt', 'w') as f:
+            with open(filename, 'a') as f:
                 f.write(prompt)
             tqdm.write('Model saved')
 
@@ -145,20 +153,20 @@ def test_model(
 ):
     precision = MulticlassPrecision(num_classes=3, average="macro")
     recall = MulticlassRecall(num_classes=3, average="macro")
-    model = torch.load(ckpt_dir / 'ckpt-best.pth', weights_only=False)
+    # model = torch.load(ckpt_dir / 'ckpt-best.pth', weights_only=False)
 
-    model.eval()
-    with torch.no_grad():
-        for features, labels in tqdm(test_loader, desc='Testing'):
-            features, labels = features.to(device), labels.to(device)
-            outputs = model(features)
+    # model.eval()
+    # with torch.no_grad():
+    #     for features, labels in tqdm(test_loader, desc='Testing'):
+    #         features, labels = features.to(device), labels.to(device)
+    #         outputs = model(features)
 
-            precision.update(outputs, labels)
-            recall.update(outputs, labels)
+    #         precision.update(outputs, labels)
+    #         recall.update(outputs, labels)
 
-    precision = precision.compute()
-    recall = recall.compute()
-    tqdm.write(f'Precision: {precision: .4f} Recall: {recall: .4f}')
+    # precision = precision.compute()
+    # recall = recall.compute()
+    # tqdm.write(f'Precision: {precision: .4f} Recall: {recall: .4f}')
 
 def load_dataset(data_dir: str, batch_size: int, split: Literal['Train', 'Test']):
     if 'Train' in split:
@@ -201,13 +209,13 @@ def main(args: Config):
     )
     # Training Arguments
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = LOBFormer()
+    model = LOBFormer(args.input_dim, args.seq_len, args.d_model, args.nhead, args.num_layers, args.dropout)
     model.to(device)
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
 
-    # train_loader, valid_loader = load_dataset(args.data_dir, args.batch_size, 'Train')
-    # train_model(model, device, criterion, optimizer, train_loader, valid_loader, args.num_epochs, writer, ckpt_dir)
+    train_loader, valid_loader = load_dataset(args.data_dir, args.batch_size, 'Train')
+    train_model(model, device, criterion, optimizer, train_loader, valid_loader, args.num_epochs, writer, ckpt_dir)
 
 if __name__ == "__main__":
     args = parse_args()
