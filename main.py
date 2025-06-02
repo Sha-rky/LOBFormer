@@ -1,19 +1,20 @@
+import time
 import random
 from datetime import datetime
-from tqdm import tqdm
 from pathlib import Path
-import time
+from typing import Literal
+import json
+
+from tqdm import tqdm
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
-import numpy as np
-
-from model import DeepLOB, LOBFormer
 from torcheval.metrics import MulticlassPrecision, MulticlassRecall
 from torch.utils.tensorboard import SummaryWriter
-from typing import Literal
-import torch
-import torch.nn as nn
+
+from model import DeepLOB, LOBFormer
+from config import parse_args, Config
 
 def fix_all_seeds(seed):
     '''Fixes RNG seeds for reproducibility.'''
@@ -69,15 +70,14 @@ class Dataset(Dataset):
 
 def train_model(
         model: nn.Module,
+        device: torch.device,
         criterion: nn.Module,
         optimizer: torch.optim.Optimizer,
         train_loader: DataLoader,
         valid_loader: DataLoader,
         num_epochs: int,
         writer: SummaryWriter,
-        data_dir: str,
-        ckpt_dir: Path
-):
+        ckpt_dir: Path):
     precision = MulticlassPrecision(num_classes=3, average="macro")
     recall = MulticlassRecall(num_classes=3, average="macro")
     best_valid_loss = np.inf # TODO optimize
@@ -116,14 +116,15 @@ def train_model(
             recall.update(outputs, labels)
         valid_loss = valid_loss / len(valid_loader)
         valid_losses.append(valid_loss)
-        tqdm.write((
+        prompt = (
             f'Epoch: {epoch + 1: 3}/{num_epochs} '
             f'Elapsed Time: {time_since(start_time)} '
             f'Train Loss: {train_loss: .4f} '
             f'Valid Loss: {valid_loss: .4f} '
             f'Precision: {precision.compute(): .4f} '
             f'Recall: {recall.compute(): .4f}'
-        ))
+        )
+        tqdm.write(prompt)
         writer.add_scalar('Loss/train', train_loss, epoch)
         writer.add_scalar('Loss/valid', valid_loss, epoch)
         writer.add_scalar('Precision/valid', precision.compute(), epoch)
@@ -134,6 +135,8 @@ def train_model(
         if valid_loss < best_valid_loss:
             torch.save(model, ckpt_dir / 'ckpt-best.pth')
             best_valid_loss = valid_loss
+            with open(f'{ckpt_dir}/best_valid_loss.txt', 'w') as f:
+                f.write(prompt)
             tqdm.write('Model saved')
 
 def test_model(
@@ -157,7 +160,7 @@ def test_model(
     recall = recall.compute()
     tqdm.write(f'Precision: {precision: .4f} Recall: {recall: .4f}')
 
-def load_dataset(data_dir: str, split: Literal['Train', 'Test']):
+def load_dataset(data_dir: str, batch_size: int, split: Literal['Train', 'Test']):
     if 'Train' in split:
         raw_train_data = np.loadtxt(f'{data_dir}/Train_Dst_NoAuction_DecPre_CF_7.txt', dtype=np.float32)
         split_point = int(raw_train_data.shape[1] * 0.8)
@@ -180,21 +183,18 @@ def load_dataset(data_dir: str, split: Literal['Train', 'Test']):
         test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
         return test_loader
 
-if __name__ == "__main__":
-    batch_size = 64
-    learning_rate = 0.0001
-    num_epochs = 10 # 50
-    data_dir = '.'
+def main(args: Config):
+    fix_all_seeds(args.seed)
 
-    # Set seed
-    fix_all_seeds(42)
-
-
+    # Checkpoints
     if not Path('./checkpoints').exists():
         Path('./checkpoints').mkdir()
     ckpt_dir = Path('./checkpoints') / get_datetime_now() 
     ckpt_dir.mkdir()
-    
+    # Save arguments
+    with open(f'{ckpt_dir}/args.json', 'w') as f:
+        args_dict = {k: str(v) for k, v in vars(args).items()}
+        json.dump(args_dict, f)
     # Tensorboard
     writer = SummaryWriter(
         log_dir=ckpt_dir
@@ -204,11 +204,11 @@ if __name__ == "__main__":
     model = LOBFormer()
     model.to(device)
     criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
 
-    train_loader, valid_loader = load_dataset(data_dir, 'Train')
-    train_model(model, criterion, optimizer, train_loader, valid_loader, num_epochs, writer, data_dir, ckpt_dir)
+    # train_loader, valid_loader = load_dataset(args.data_dir, args.batch_size, 'Train')
+    # train_model(model, device, criterion, optimizer, train_loader, valid_loader, args.num_epochs, writer, ckpt_dir)
 
-
-    # test_loader = load_dataset(data_dir, 'Test')
-    # test_model(test_loader, Path(ckpt_dir))
+if __name__ == "__main__":
+    args = parse_args()
+    main(args)

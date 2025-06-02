@@ -97,27 +97,6 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, :x.shape[1], :].detach()
         return self.dropout(x)
 
-
-"""
-Transformer
-輸入是(batch_size, context_length)，會經過embedding層變成(batch_size, context_length, embedding_dim)
-此時輸入成了vector sequence，而輸出的shape則是一模一樣。
-
-- input_dim      : vocabulary size
-- d_model        : embedding dimension
-- max_len        : context length/sequence length/block size
-- nhead          : number of attention heads
-- dim_feedforward: usually 4*d_model 
-- num_layers     : number of repetitive encoder blocks
-
-
-MultiheadAttention
-- embed_dim      : d_model
-- num_heads      : nhead
-- kdim           : default is embed_dim
-- vdim           : default is embed_dim
-(head_dim = embed_dim // num_heads)
-"""
 class LOBFormer(nn.Module):
     def __init__(
         self,
@@ -126,7 +105,6 @@ class LOBFormer(nn.Module):
         d_model=128,
         nhead=8,
         num_layers=4,
-        num_classes=3,
         dropout=0.1
     ):
         super().__init__()
@@ -147,7 +125,7 @@ class LOBFormer(nn.Module):
 
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         self.dropout = nn.Dropout(dropout)
-        self.output_head = nn.Linear(d_model, num_classes)
+        self.output_head = nn.Linear(d_model, 3)
 
     def forward(self, x):
         x = self.embedding(x)
