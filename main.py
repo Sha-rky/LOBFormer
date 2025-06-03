@@ -12,6 +12,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torcheval.metrics import MulticlassPrecision, MulticlassRecall
 from torch.utils.tensorboard import SummaryWriter
+import matplotlib.pyplot as plt
 
 from model import DeepLOB, LOBFormer
 from config import parse_args, Config
@@ -83,14 +84,6 @@ def train_model(
     best_valid_loss = np.inf # TODO optimize
     train_losses = []
     valid_losses = []
-    filename = (
-        f'bs{args.batch_size}_'
-        f'lr{args.learning_rate}_'
-        f'dm{args.d_model}_'
-        f'dp{args.dropout}_'
-        f'nh{args.nhead}_'
-        f'nl{args.num_layers}.txt'
-    )
 
     start_time = time.time()
     for epoch in range(1, num_epochs + 1):
@@ -143,8 +136,6 @@ def train_model(
         if valid_loss < best_valid_loss:
             torch.save(model, ckpt_dir / 'ckpt-best.pth')
             best_valid_loss = valid_loss
-            with open(filename, 'a') as f:
-                f.write(prompt)
             tqdm.write('Model saved')
 
 def test_model(
@@ -216,6 +207,38 @@ def main(args: Config):
 
     train_loader, valid_loader = load_dataset(args.data_dir, args.batch_size, 'Train')
     train_model(model, device, criterion, optimizer, train_loader, valid_loader, args.num_epochs, writer, ckpt_dir)
+
+def visualize_dataset(data_dir: str):
+    raw_train_data = np.loadtxt(f'{data_dir}/Train_Dst_NoAuction_DecPre_CF_7.txt', dtype=np.float32)
+    train_data = raw_train_data[:, :100]
+
+
+    ask_price_lv1 = train_data[0, :]
+    bid_price_lv1 = train_data[2, :]
+    mid_price = (ask_price_lv1 + bid_price_lv1) / 2
+
+    labels = train_data[-5, :]
+    labels = np.roll(labels, -1)
+
+
+    fig, ax = plt.subplots(figsize=(14, 6))
+
+    # Plot labels
+    for i, label in enumerate(labels):
+        if label == 1:
+            ax.axvspan(i, i + 1, color='red', alpha=0.3)
+        elif label == 3:
+            ax.axvspan(i, i + 1, color='green', alpha=0.3)
+
+    plt.plot(mid_price, label='Mid Price (Normalized)')
+    # plt.plot(ask_price_lv1, label='Ask Price L1 (Norm)', linestyle='--')
+    # plt.plot(bid_price_lv1, label='Bid Price L1 (Norm)', linestyle='--')
+    ax.set_title(f"Relative Price Trend")
+    ax.set_xlabel("Time Index")
+    ax.set_ylabel("Normalized Price")
+    ax.legend()
+    plt.tight_layout()
+    plt.show()
 
 if __name__ == "__main__":
     args = parse_args()
